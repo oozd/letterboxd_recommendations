@@ -10,7 +10,6 @@ import {
   Button,
 } from "@mui/material";
 
-import LabeledSlider from "./ui/LabeledSlider";
 import { poll, getRecData } from "../util/util";
 
 const validateData = (data, progressStep, setProgressStep, setRedisData) => {
@@ -50,7 +49,7 @@ const Controls = ({
   const POLL_INTERVAL = 1000;
 
   const [username, setUsername] = useState("");
-  const [modelStrength, setModelStrength] = useState(1000000);
+  const [modelStrength] = useState(5000000);
   // const [popularityFilter, setPopularityFilter] = useState(-1)
   const [dataOptIn, setDataOptIn] = useState(false);
 
@@ -122,20 +121,7 @@ const Controls = ({
         />
       </FormControl>
 
-      <FormGroup className={"form-slider"}>
-        <LabeledSlider
-          aria-label="Model strength slider. Increase value to get better results. Decrease to get faster results."
-          defaultValue={modelStrength}
-          value={modelStrength}
-          onChange={(e) => setModelStrength(e.target.value)}
-          step={2000000}
-          min={1000000}
-          max={5000000}
-          valueLabelDisplay="off"
-          marks={true}
-          labels={["Faster Results", "Better Results"]}
-        />
-      </FormGroup>
+
 
       {/* <FormGroup className={"form-slider"}>
         <LabeledSlider

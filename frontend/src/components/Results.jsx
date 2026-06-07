@@ -4,6 +4,7 @@ import { Button } from "@mui/material";
 
 import Result from "./Result";
 import ListFilters from "./ListFilters";
+import RadarChart from "./ui/RadarChart";
 import { exportCSV } from "../util/util";
 
 import "../styles/Results.scss";
@@ -11,6 +12,17 @@ import "../styles/Results.scss";
 const colorScale = scaleLinear()
   .domain([1, 5.5, 9, 10])
   .range(["red", "#fde541", "green", "#1F3D0C"]);
+
+const DEFAULT_WEIGHTS = {
+  Action: 5,
+  Comedy: 5,
+  Drama: 5,
+  Romance: 5,
+  Documentary: 5,
+  Horror: 5,
+  "Sci-Fi": 5,
+  Thriller: 5,
+};
 
 const Results = ({ results, userWatchlist }) => {
   const [listDownloaded, setListDownloaded] = useState(false);
@@ -20,17 +32,60 @@ const Results = ({ results, userWatchlist }) => {
     excluded: ["Music"],
   });
   const [filteredYearRange, setFilteredYearRange] = useState(null);
-  const [filteredPopularityRange, setFilteredPopularityRange] = useState(null);
+  const [popularityFilter, setPopularityFilter] = useState(1);
   const [excludeWatchlist, setExcludeWatchlist] = useState(true);
+
+  const [genreWeights, setGenreWeights] = useState(DEFAULT_WEIGHTS);
+
+  const handleWeightChange = (genreKey, newWeight) => {
+    setGenreWeights((prev) => ({
+      ...prev,
+      [genreKey]: newWeight,
+    }));
+  };
+
+  const handleResetWeights = () => {
+    setGenreWeights(DEFAULT_WEIGHTS);
+  };
 
   const displayedResults = useMemo(() => {
     if (!results) {
       return [];
     }
 
-    let output = results.slice();
+    // 1. Calculate adjusted ratings for all candidate recommendations
+    let output = results.map((movie) => {
+      const movieGenres = movie.movie_data.genres ?? [];
+      let totalFactor = 0;
+      let matchCount = 0;
 
-    // filter on genres
+      Object.keys(genreWeights).forEach((genreKey) => {
+        const weight = genreWeights[genreKey];
+        // Handle "Sci-Fi" vs "Science Fiction" casing and mapping
+        const matchKey =
+          genreKey === "Sci-Fi" ? "science fiction" : genreKey.toLowerCase();
+        const hasGenre = movieGenres.some(
+          (g) => g && g.toLowerCase() === matchKey,
+        );
+
+        if (hasGenre) {
+          // alpha = 0.25 scaling parameter
+          const factor = 1 + 0.25 * ((weight - 5) / 5);
+          totalFactor += factor;
+          matchCount++;
+        }
+      });
+
+      const multiplier = matchCount > 0 ? totalFactor / matchCount : 1.0;
+      const adjustedRating = movie.predicted_rating * multiplier;
+
+      return {
+        ...movie,
+        predicted_rating: adjustedRating,
+      };
+    });
+
+    // 2. Filter on genres
     const includeSet = new Set(filteredGenres.included);
     const excludeSet = new Set(filteredGenres.excluded);
 
@@ -47,7 +102,7 @@ const Results = ({ results, userWatchlist }) => {
       }
     });
 
-    // filter on year range
+    // 3. Filter on year range
     if (filteredYearRange) {
       output = output.filter(
         (movie) =>
@@ -56,30 +111,32 @@ const Results = ({ results, userWatchlist }) => {
       );
     }
 
-    // filter on popularity value (via TMDB)
-    if (filteredPopularityRange) {
-      output = output.filter(
-        (movie) =>
-          movie.movie_data.popularity >= filteredPopularityRange[0] &&
-          movie.movie_data.popularity <= filteredPopularityRange[1],
-      );
+    // 4. Filter on popularity (via TMDB)
+    if (popularityFilter === 0) {
+      output = output.filter((movie) => movie.movie_data.popularity < 5.0);
+    } else if (popularityFilter === 2) {
+      output = output.filter((movie) => movie.movie_data.popularity >= 15.0);
     }
 
-    // exclude watchlist items (if watchlist present and exclude checkbox is selected)
+    // 5. Exclude watchlist items (if watchlist present and exclude checkbox is selected)
     if (excludeWatchlist === true && userWatchlist !== null) {
       output = output.filter(
         (movie) => !userWatchlist.includes(movie.movie_data.movie_id),
       );
     }
 
-    return output.slice(0, 50);
+    // 6. Re-sort candidates based on their adjusted predicted ratings
+    output.sort((a, b) => b.predicted_rating - a.predicted_rating);
+
+    return output.slice(0, 100);
   }, [
     results,
     filteredGenres,
     filteredYearRange,
-    filteredPopularityRange,
+    popularityFilter,
     excludeWatchlist,
     userWatchlist,
+    genreWeights,
   ]);
 
   return (
@@ -112,11 +169,19 @@ const Results = ({ results, userWatchlist }) => {
         </div>
       )}
       {results && (
+        <RadarChart
+          weights={genreWeights}
+          onChange={handleWeightChange}
+          onReset={handleResetWeights}
+        />
+      )}
+      {results && (
         <ListFilters
           results={results}
           setFilteredGenres={setFilteredGenres}
           setFilteredYearRange={setFilteredYearRange}
-          setFilteredPopularityRange={setFilteredPopularityRange}
+          popularityFilter={popularityFilter}
+          setPopularityFilter={setPopularityFilter}
           excludeWatchlist={excludeWatchlist}
           setExcludeWatchlist={setExcludeWatchlist}
         />

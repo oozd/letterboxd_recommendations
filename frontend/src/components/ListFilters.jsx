@@ -41,7 +41,8 @@ const ListFilters = ({
   results,
   setFilteredGenres,
   setFilteredYearRange,
-  setFilteredPopularityRange,
+  popularityFilter,
+  setPopularityFilter,
   excludeWatchlist,
   setExcludeWatchlist,
 }) => {
@@ -51,43 +52,30 @@ const ListFilters = ({
         results
           .map((d) => d.movie_data.genres)
           .flat()
-          .filter((d) => d && d !== ""),
+          .filter((d) => d && d !== "" && d !== "Music"),
       ),
     ].sort();
   }, [results]);
 
   const allYears = useMemo(() => {
+    const years = results
+      .filter((d) => d.movie_data.year_released)
+      .map((d) => d.movie_data.year_released);
+
+    if (years.length === 0) {
+      return [1900, new Date().getFullYear()];
+    }
+
     return [
-      Math.min(
-        ...results
-          .filter((d) => d.movie_data.year_released)
-          .map((d) => d.movie_data.year_released),
-      ),
-      Math.max(
-        ...results
-          .filter((d) => d.movie_data.year_released)
-          .map((d) => d.movie_data.year_released),
-      ),
+      Math.min(...years),
+      Math.max(...years, new Date().getFullYear()),
     ];
   }, [results]);
 
-  // const popularityRange = useMemo(() => {
-  //   return [
-  //     Math.min(
-  //       ...results.filter((d) => d.movie_data.popularity).map((d) => d.movie_data.popularity)
-  //     ),
-  //     Math.max(
-  //       ...results.filter((d) => d.movie_data.popularity).map((d) => d.movie_data.popularity)
-  //     ),
-  //   ];
-  // }, [results]);
-
   const [genres, setGenres] = useState({
     included: allGenres,
-    excluded: ["Music"],
   });
   const [yearRange, setYearRange] = useState(allYears);
-  // const [popularity, setPopularity] = useState(popularityRange);
 
   useEffect(() => {
     setYearRange(allYears);
@@ -96,26 +84,31 @@ const ListFilters = ({
   const theme = useTheme();
 
   const handleGenreChange = useCallback(
-    (event, listType) => {
+    (event) => {
       const {
         target: { value },
       } = event;
 
       // On autofill we get a stringified value.
-      const newGenreVal = typeof value === "string" ? value.split(",") : value;
+      let newGenreVal = typeof value === "string" ? value.split(",") : value;
+
+      if (newGenreVal.includes("select-all")) {
+        const allSelected = genres.included.length === allGenres.length;
+        newGenreVal = allSelected ? [] : [...allGenres];
+      }
 
       setGenres((curr) => {
-        const output = { ...curr, [listType]: newGenreVal };
+        const output = { ...curr, included: newGenreVal };
 
-        if (listType === "include" && newGenreVal.length === allGenres.length) {
-          setFilteredGenres({ ...output, include: null });
+        if (newGenreVal.length === allGenres.length) {
+          setFilteredGenres((prev) => ({ ...prev, included: null }));
         } else {
-          setFilteredGenres(output);
+          setFilteredGenres((prev) => ({ ...prev, included: newGenreVal }));
         }
         return output;
       });
     },
-    [setGenres, setFilteredGenres, allGenres.length],
+    [genres.included, allGenres, setFilteredGenres],
   );
 
   const handleYearChange = useCallback(
@@ -125,14 +118,6 @@ const ListFilters = ({
     },
     [setYearRange, setFilteredYearRange],
   );
-
-  // const handlePopularityChange = useCallback(
-  //   (_, newValue) => {
-  //     setPopularity(newValue);
-  //     setFilteredPopularityRange(newValue);
-  //   },
-  //   [setPopularity, setFilteredPopularityRange]
-  // );
 
   return (
     <div className="list-filter-controls">
@@ -156,27 +141,28 @@ const ListFilters = ({
         </Box>
       </FormControl>
 
-      {/* <FormControl>
+      <FormControl sx={{ m: 1, mt: 2, width: 400, maxWidth: "90vw" }}>
         <Box>
           <InputLabel id="popularity-filter-label" shrink={true}>
             Popularity
           </InputLabel>
-          <LabeledSlider
+          <Slider
             labelId="popularity-filter-label"
             id="popularity-filter"
-            aria-label="Poplularity filter slider. Adjust value to only receive recommendations for more- or less-watched movies."
-            value={popularity}
-            onChange={handlePopularityChange}
+            value={popularityFilter}
+            onChange={(_, val) => setPopularityFilter(val)}
             valueLabelDisplay="off"
-            getAriaValueText={(value) => value}
-            min={popularityRange[0]}
-            max={popularityRange[1]}
-            marks={true}
-            labels={["Less", "More"]}
-            step={Math.round(popularityRange[1] - popularityRange[0]) / 10}
+            min={0}
+            max={2}
+            step={1}
+            marks={[
+              { value: 0, label: "Niche" },
+              { value: 1, label: "All" },
+              { value: 2, label: "Popular" },
+            ]}
           />
         </Box>
-      </FormControl> */}
+      </FormControl>
 
       <FormControl sx={{ m: 1, width: 400, maxWidth: "90vw" }}>
         <InputLabel id="included-genre-filter-label">
@@ -187,7 +173,7 @@ const ListFilters = ({
           id="included-genre-filter"
           multiple
           value={genres.included}
-          onChange={(e) => handleGenreChange(e, "included")}
+          onChange={handleGenreChange}
           getAriaLabel={() => "Included genre filter"}
           input={
             <OutlinedInput id="select-multiple-chip" label="Included genres" />
@@ -195,6 +181,8 @@ const ListFilters = ({
           renderValue={(selected) =>
             selected.length === allGenres.length ? (
               <div className="default-all-display">All</div>
+            ) : selected.length === 0 ? (
+              <div className="default-all-display">None</div>
             ) : (
               <Box
                 sx={{
@@ -211,6 +199,22 @@ const ListFilters = ({
           }
           MenuProps={MenuProps}
         >
+          <MenuItem value="select-all">
+            <Checkbox
+              checked={genres.included.length === allGenres.length}
+              indeterminate={
+                genres.included.length > 0 &&
+                genres.included.length < allGenres.length
+              }
+            />
+            <ListItemText
+              primary={
+                genres.included.length === allGenres.length
+                  ? "Deselect All"
+                  : "Select All"
+              }
+            />
+          </MenuItem>
           {allGenres.map((genre) => (
             <MenuItem
               key={genre}
@@ -218,52 +222,6 @@ const ListFilters = ({
               style={getStyles(genre, genres.included, theme)}
             >
               <Checkbox checked={genres.included.indexOf(genre) > -1} />
-              <ListItemText primary={genre} />
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-
-      <FormControl sx={{ m: 1, width: 400, maxWidth: "90vw" }}>
-        <InputLabel id="excluded-genre-filter-label">
-          Excluded genres
-        </InputLabel>
-        <Select
-          labelId="excluded-genre-filter-label"
-          id="excluded-genre-filter"
-          multiple
-          value={genres.excluded}
-          onChange={(e) => handleGenreChange(e, "excluded")}
-          getAriaLabel={() => "Excluded genre filter"}
-          input={
-            <OutlinedInput id="select-multiple-chip" label="Excluded genres" />
-          }
-          renderValue={(selected) =>
-            selected.length === allGenres.length ? (
-              <div className="default-all-display">All</div>
-            ) : (
-              <Box
-                sx={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 0.5,
-                }}
-              >
-                {selected.map((value) => (
-                  <Chip key={value} label={value} />
-                ))}
-              </Box>
-            )
-          }
-          MenuProps={MenuProps}
-        >
-          {allGenres.map((genre) => (
-            <MenuItem
-              key={genre}
-              value={genre}
-              style={getStyles(genre, genres.excluded, theme)}
-            >
-              <Checkbox checked={genres.excluded.indexOf(genre) > -1} />
               <ListItemText primary={genre} />
             </MenuItem>
           ))}
